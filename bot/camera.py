@@ -74,6 +74,9 @@ class Camera:
         self._ready_dir: str = config.get('timelapse', 'copy_finished_timelapse_dir', fallback='')  # Fixme: relative path failed! ~/timelapse
         self._cleanup: bool = config.getboolean('timelapse', 'cleanup', fallback=True)
         self._fps: int = config.getint('timelapse', 'target_fps', fallback=15)
+        self._timelapseDuration: int = config.getint('timelapse', 'duration', fallback=0)
+        self._add_frame_before: bool = config.getboolean('timelapse', 'add_frame_before', fallback=False)
+        self._add_frame_after: bool = config.getboolean('timelapse', 'add_frame_after', fallback=False)
         self._light_need_off: bool = False
         self._light_need_off_lock = threading.Lock()
 
@@ -303,12 +306,28 @@ class Camera:
         if Path(video_filepath).is_file():
             os.remove(video_filepath)
 
+        if self._timelapseDuration:
+            target_fps = len(photos) // self._timelapseDuration
+            if target_fps < self._fps:
+                target_fps = self._fps
+        else:
+            target_fps = self._fps
+
         with self._camera_lock:
             cv2.setNumThreads(self._threads)  # TOdo: check self set and remove!
-            out = cv2.VideoWriter(video_filepath, fourcc=cv2.VideoWriter_fourcc(*self._fourcc), fps=self._fps, frameSize=(width, height))
+            out = cv2.VideoWriter(video_filepath, fourcc=cv2.VideoWriter_fourcc(*self._fourcc), fps=target_fps, frameSize=(width, height))
 
+            # add 1 sec at begin and end
+            if self._add_frame_before:
+                for _ in range(target_fps):
+                    out.write(cv2.imread(photos[0]))
+                
             for filename in photos:
                 out.write(cv2.imread(filename))
+
+            if self._add_frame_after:
+                for _ in range(target_fps):
+                    out.write(cv2.imread(photos[-1]))
 
             out.release()
             cv2.destroyAllWindows()
